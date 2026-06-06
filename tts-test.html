@@ -3,30 +3,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>tagarela · TTS diagnostic</title>
+<title>tagarela · TTS diagnostic v2</title>
 <style>
-  body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 20px; color: #2c241d; background: #faf6f0; }
+  body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; max-width: 660px; margin: 40px auto; padding: 0 20px; color: #2c241d; background: #faf6f0; }
   h1 { font-size: 20px; }
+  h2 { font-size: 14px; margin: 22px 0 6px; color: #e8714d; text-transform: uppercase; letter-spacing: .04em; }
   p.note { color: #666; font-size: 13px; }
-  button { display: block; width: 100%; text-align: left; margin: 8px 0; padding: 12px 16px; border: 1px solid #e0d6c8; border-radius: 10px; background: #fff; font-size: 15px; cursor: pointer; }
+  button { display: block; width: 100%; text-align: left; margin: 7px 0; padding: 11px 15px; border: 1px solid #e0d6c8; border-radius: 10px; background: #fff; font-size: 14px; cursor: pointer; }
   button:hover { border-color: #e8714d; }
   button b { color: #e8714d; }
-  #log { margin-top: 20px; background: #1e1a16; color: #c8e6c9; font: 12px/1.5 ui-monospace, monospace; padding: 14px; border-radius: 10px; white-space: pre-wrap; min-height: 120px; max-height: 50vh; overflow: auto; }
+  #log { margin-top: 18px; background: #1e1a16; color: #c8e6c9; font: 12px/1.5 ui-monospace, monospace; padding: 14px; border-radius: 10px; white-space: pre-wrap; min-height: 120px; max-height: 50vh; overflow: auto; }
   .err { color: #ff8a80; }
   .ok { color: #a5d6a7; }
+  .hdr { color: #ffd54f; font-weight: bold; }
 </style>
 </head>
 <body>
-  <h1>tagarela · TTS diagnostic</h1>
-  <p class="note">Click each button and listen. The log below records every event. Tell me which ones make sound and paste the log.</p>
+  <h1>tagarela · TTS diagnostic v2</h1>
+  <p class="note">Click <b>Run all reachability tests</b> first, then try the audio buttons and listen. Paste the whole log back to me.</p>
 
-  <button onclick="testGoogle('tw-ob')">Test 1 — Google TTS (<b>client=tw-ob</b>)</button>
-  <button onclick="testGoogle('gtx')">Test 2 — Google TTS (<b>client=gtx</b>)</button>
-  <button onclick="testGoogleCors()">Test 3 — Google TTS via <b>fetch + blob</b></button>
-  <button onclick="testBrowser()">Test 4 — Browser <b>Web Speech API</b></button>
-  <button onclick="listVoices()">Test 5 — List browser voices</button>
+  <button onclick="runAll()" style="border-color:#e8714d;background:#fff3ee"><b>&#9654; Run all reachability tests</b></button>
 
-  <div id="log">ready.\n</div>
+  <h2>Audio you can hear</h2>
+  <button onclick="testStreamElements()">A &mdash; <b>StreamElements / Amazon Polly</b> (cloud voice, not Google)</button>
+  <button onclick="testKokoro()">B &mdash; <b>Kokoro</b> neural model (downloads ~80MB, first run slow)</button>
+
+  <h2>Reachability (no audio, just network)</h2>
+  <button onclick="reach('https://api.streamelements.com/kappa/v2/speech?voice=Brian&text=hi','StreamElements')">C &mdash; reach StreamElements</button>
+  <button onclick="reach('https://esm.sh/kokoro-js@1.2.1','esm.sh')">D &mdash; reach esm.sh (Kokoro loader)</button>
+  <button onclick="reach('https://huggingface.co/onnx-community/Kokoro-82M-v1.0/resolve/main/config.json','HuggingFace')">E &mdash; reach HuggingFace (Kokoro model host)</button>
+  <button onclick="reach('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/package.json','jsDelivr')">F &mdash; reach jsDelivr</button>
+
+  <div id="log">ready.
+</div>
 
 <script>
 const logEl = document.getElementById('log');
@@ -34,62 +43,63 @@ function log(msg, cls) {
   const line = document.createElement('span');
   if (cls) line.className = cls;
   line.textContent = msg + '\n';
-  logEl.appendChild(line);
-  logEl.scrollTop = logEl.scrollHeight;
+  logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
 }
 
-function testGoogle(client) {
-  const url = "https://translate.googleapis.com/translate_tts?ie=UTF-8&tl=en&q=" +
-    encodeURIComponent("Hello, this is a test of Google text to speech.") + "&client=" + client;
-  log("[" + client + "] creating Audio()…");
-  const audio = new Audio(url);
-  audio.onloadeddata = () => log("[" + client + "] loadeddata (audio data received)", "ok");
-  audio.oncanplay   = () => log("[" + client + "] canplay", "ok");
-  audio.onplay      = () => log("[" + client + "] play event fired", "ok");
-  audio.onended     = () => log("[" + client + "] ended — DONE", "ok");
-  audio.onerror     = () => log("[" + client + "] ERROR: " + (audio.error ? audio.error.code + " / " + audio.error.message : "unknown"), "err");
-  audio.play().then(() => log("[" + client + "] play() promise resolved", "ok"))
-              .catch(e => log("[" + client + "] play() REJECTED: " + e.name + " — " + e.message, "err"));
+function playUrl(url, tag) {
+  log("[" + tag + "] creating Audio()...");
+  const a = new Audio(url);
+  a.oncanplay = () => log("[" + tag + "] canplay - data OK", "ok");
+  a.onended = () => log("[" + tag + "] ended - DONE (did you hear it?)", "ok");
+  a.onerror = () => log("[" + tag + "] ERROR code " + (a.error ? a.error.code : "?") + " - blocked/unsupported", "err");
+  a.play().then(() => log("[" + tag + "] play() resolved", "ok"))
+          .catch(e => log("[" + tag + "] play() REJECTED: " + e.name, "err"));
 }
 
-async function testGoogleCors() {
-  const url = "https://translate.googleapis.com/translate_tts?ie=UTF-8&tl=en&q=" +
-    encodeURIComponent("Fetch and blob test.") + "&client=tw-ob";
-  log("[fetch] requesting…");
+function testStreamElements() {
+  playUrl("https://api.streamelements.com/kappa/v2/speech?voice=Brian&text=" +
+    encodeURIComponent("Hello, this is Amazon Polly speaking through Stream Elements."), "Polly");
+}
+
+async function reach(url, tag) {
+  log("[reach " + tag + "] fetching...");
   try {
-    const r = await fetch(url);
-    log("[fetch] status " + r.status + " type " + r.headers.get("content-type"), r.ok ? "ok" : "err");
-    const blob = await r.blob();
-    log("[fetch] blob size " + blob.size + " bytes", "ok");
-    const a = new Audio(URL.createObjectURL(blob));
-    a.onended = () => log("[fetch] ended — DONE", "ok");
-    a.onerror = () => log("[fetch] audio error", "err");
-    await a.play();
-    log("[fetch] playing…", "ok");
+    const r = await fetch(url, { mode: "cors" });
+    log("[reach " + tag + "] OK status " + r.status + " type " + (r.headers.get("content-type")||"?"), "ok");
   } catch (e) {
-    log("[fetch] FAILED: " + e.name + " — " + e.message, "err");
+    log("[reach " + tag + "] BLOCKED: " + e.name + " - " + e.message, "err");
   }
 }
 
-function testBrowser() {
-  if (!window.speechSynthesis) { log("[browser] speechSynthesis NOT available", "err"); return; }
-  log("[browser] cancel() then speak()…");
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance("Hello, this is the browser speech engine.");
-  u.lang = "en-US";
-  u.onstart = () => log("[browser] start", "ok");
-  u.onend   = () => log("[browser] end — DONE", "ok");
-  u.onerror = (e) => log("[browser] ERROR: " + e.error, "err");
-  speechSynthesis.speak(u);
-  setTimeout(() => log("[browser] speaking=" + speechSynthesis.speaking + " pending=" + speechSynthesis.pending), 300);
+async function testKokoro() {
+  log("[kokoro] importing from esm.sh...");
+  try {
+    const mod = await import("https://esm.sh/kokoro-js@1.2.1");
+    log("[kokoro] module loaded, keys: " + Object.keys(mod).join(","), "ok");
+    const KokoroTTS = mod.KokoroTTS;
+    log("[kokoro] downloading model (this can take a while)...");
+    const tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0", { dtype: "q8", device: "wasm" });
+    log("[kokoro] model ready, generating...", "ok");
+    const audio = await tts.generate("Hello, this is the Kokoro neural voice.", { voice: "af_heart" });
+    log("[kokoro] generated. methods: " + Object.getOwnPropertyNames(Object.getPrototypeOf(audio)).join(","), "ok");
+    const blob = audio.toBlob ? audio.toBlob() : new Blob([audio.toWav()], { type: "audio/wav" });
+    const a = new Audio(URL.createObjectURL(blob));
+    a.onended = () => log("[kokoro] ended - DONE (did you hear it?)", "ok");
+    a.onerror = () => log("[kokoro] playback error", "err");
+    await a.play();
+    log("[kokoro] playing...", "ok");
+  } catch (e) {
+    log("[kokoro] FAILED: " + e.name + " - " + e.message, "err");
+  }
 }
 
-function listVoices() {
-  const v = speechSynthesis.getVoices();
-  log("[voices] count: " + v.length);
-  v.slice(0, 40).forEach(x => log("  • " + x.name + " (" + x.lang + ")" + (x.localService ? " [local]" : " [network]")));
+function runAll() {
+  log("-------- reachability sweep --------", "hdr");
+  reach('https://api.streamelements.com/kappa/v2/speech?voice=Brian&text=hi','StreamElements');
+  reach('https://esm.sh/kokoro-js@1.2.1','esm.sh');
+  reach('https://huggingface.co/onnx-community/Kokoro-82M-v1.0/resolve/main/config.json','HuggingFace');
+  reach('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/package.json','jsDelivr');
 }
-if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => log("[voices] voiceschanged fired — " + speechSynthesis.getVoices().length + " voices now available");
 </script>
 </body>
 </html>
