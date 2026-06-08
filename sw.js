@@ -2,15 +2,15 @@
 // Only the model files are cached here; the main app is a single HTML file
 // and caches itself via the browser's normal HTTP cache.
 
-const CACHE = "tagarela-nllb-v1";
+const CACHE = "tagarela-nllb-v2";
 
 const MODEL_FILES = [
-  "models/nllb/config.json",
-  "models/nllb/tokenizer.json",
-  "models/nllb/tokenizer_config.json",
-  "models/nllb/generation_config.json",
-  "models/nllb/onnx/encoder_model_quantized.onnx",
-  "models/nllb/onnx/decoder_model_merged_quantized.onnx",
+  "models/nllb-200-distilled-600M/config.json",
+  "models/nllb-200-distilled-600M/tokenizer.json",
+  "models/nllb-200-distilled-600M/tokenizer_config.json",
+  "models/nllb-200-distilled-600M/generation_config.json",
+  "models/nllb-200-distilled-600M/onnx/encoder_model_quantized.onnx",
+  "models/nllb-200-distilled-600M/onnx/decoder_model_merged_quantized.onnx",
 ];
 
 // On install: pre-cache model files relative to the SW scope
@@ -41,7 +41,7 @@ self.addEventListener("activate", (event) => {
 // Network-first for everything except the large ONNX files (cache-first)
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  const isModel = url.pathname.includes("/models/nllb/");
+  const isModel = url.pathname.includes("/models/nllb-200-distilled-600M/");
 
   if (isModel) {
     event.respondWith(
